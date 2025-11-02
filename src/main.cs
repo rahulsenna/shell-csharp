@@ -1,5 +1,8 @@
+using System.Collections;
+
 class Program
 {
+  
   static readonly string[] builtins = ["echo", "cd", "exit", "pwd", "history", "type"];
   List<string> executables = [.. builtins];
   static void Main()
@@ -14,22 +17,53 @@ class Program
       if (line == "exit 0")
         Environment.Exit(0);
 
-      int spaceIdx = line.IndexOf(' ');
-      string command = spaceIdx < 0 ? line : line[0..spaceIdx];
+      int firstTokenIdx = line.IndexOf(' ');
+      string firstToken = firstTokenIdx < 0 ? line : line[0..firstTokenIdx];
 
-      if (command == "echo")
+      if (firstToken == "echo")
         Console.WriteLine(line.AsMemory(5));
 
-      else if (command == "type")
+      else if (firstToken == "type")
       {
-        string cmd2 = line[(spaceIdx + 1)..];
-        if (builtins.Contains(cmd2))
-          Console.WriteLine($"{cmd2} is a shell builtin");
-        else
-          Console.WriteLine($"{cmd2}: not found");
+        Type(line);
       }
       else
         Console.WriteLine($"{line}: command not found");
     }
   }
+
+  static void Type(string line)
+  {
+    string secondToken = line[5..];
+    if (builtins.Contains(secondToken))
+      Console.WriteLine($"{secondToken} is a shell builtin");
+    else
+    {
+      string? path = Environment.GetEnvironmentVariable("PATH");
+      foreach (var dir in path!.Split(":"))
+      {
+        var fullPath = Path.Combine(dir, secondToken);
+        if (File.Exists(fullPath) && IsExecutable(fullPath))
+        {
+          Console.Error.WriteLine($"{secondToken} is {fullPath}");
+          return;
+        }
+      }
+      Console.WriteLine($"{secondToken}: not found");
+    }
+  }
+
+  static bool IsExecutable(string path)
+  {
+    if (OperatingSystem.IsWindows())
+    {
+      string ext = Path.GetExtension(path).ToLowerInvariant();
+      return ext == ".exe" || ext == ".bat" || ext == ".cmd" || ext == ".com";
+    }
+
+    UnixFileMode mode = File.GetUnixFileMode(path);
+    return (mode & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+  }
+
 }
+
