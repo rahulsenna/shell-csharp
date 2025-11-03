@@ -24,6 +24,26 @@ class Program
       if (firstToken == "echo")
         Console.WriteLine(line.AsMemory(5));
 
+      else if (firstToken == "pwd")
+      {
+        string dir = Environment.CurrentDirectory;
+        if (dir.StartsWith("/private")) // for mac
+          dir = dir[8..];
+        Console.WriteLine(dir);
+      }
+      else if (firstToken == "cd")
+      {
+        string dir = line[3..];
+        if (dir == "~")
+          dir = Environment.GetEnvironmentVariable("HOME")!;
+
+        if (!Path.Exists(dir))
+        {
+          Console.Error.WriteLine($"cd: {dir}: No such file or directory");
+          continue;
+        }
+        Directory.SetCurrentDirectory(dir);
+      }
       else if (firstToken == "type")
       {
         Type(line);
@@ -32,7 +52,7 @@ class Program
       {
         var exe = FindExecutable(firstToken);
         if (exe == null)
-          Console.WriteLine($"{line}: command not found"); 
+          Console.WriteLine($"{line}: command not found");
         else
         {
           using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });

@@ -11,7 +11,7 @@
                 "test_csharp"
             ],
             "options": {
-                "cwd": "/Users/agentofchaos/dev/testers-codecrafters-io/shell-tester"
+                "cwd": "/Users/agentofchaos/Developer/testers-codecrafters-io/shell-tester"
             },
             "problemMatcher": [],
             "group": {
