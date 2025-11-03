@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Diagnostics;
 
 class Program
 {
@@ -28,7 +29,17 @@ class Program
         Type(line);
       }
       else
-        Console.WriteLine($"{line}: command not found");
+      {
+        var exe = FindExecutable(firstToken);
+        if (exe == null)
+          Console.WriteLine($"{line}: command not found"); 
+        else
+        {
+          using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
+          process?.WaitForExit();
+        }
+      }
+        
     }
   }
 
@@ -39,18 +50,24 @@ class Program
       Console.WriteLine($"{secondToken} is a shell builtin");
     else
     {
-      string? path = Environment.GetEnvironmentVariable("PATH");
-      foreach (var dir in path!.Split(":"))
-      {
-        var fullPath = Path.Combine(dir, secondToken);
-        if (File.Exists(fullPath) && IsExecutable(fullPath))
-        {
-          Console.Error.WriteLine($"{secondToken} is {fullPath}");
-          return;
-        }
-      }
-      Console.WriteLine($"{secondToken}: not found");
+      var path = FindExecutable(secondToken);
+      if (path == null)
+        Console.WriteLine($"{secondToken}: not found");
+      else
+        Console.WriteLine($"{secondToken} is {path}");
     }
+  }
+
+  static string? FindExecutable(string program)
+  {
+    string? path = Environment.GetEnvironmentVariable("PATH");
+    foreach (var dir in path!.Split(":"))
+    {
+      var fullPath = Path.Combine(dir, program);
+      if (File.Exists(fullPath) && IsExecutable(fullPath))
+        return fullPath;
+    }
+    return null;
   }
 
   static bool IsExecutable(string path)
