@@ -4,7 +4,7 @@ using System.Text;
 
 class Program
 {
-  
+
   static readonly string[] builtins = ["echo", "cd", "exit", "pwd", "history", "type"];
   List<string> executables = [.. builtins];
   static void Main()
@@ -29,6 +29,15 @@ class Program
         bool inDoubleQuote = false;
         for (int i = 5; i < line.Length; ++i)
         {
+          if (line[i] == '\\')
+          {
+            if (inSingleQuote)
+              sb.Append('\\');
+
+            sb.Append(line[++i]);
+            continue;
+          }
+
           while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
           {
             if (inSingleQuote || inDoubleQuote)
@@ -90,7 +99,7 @@ class Program
           process?.WaitForExit();
         }
       }
-        
+
     }
   }
 
