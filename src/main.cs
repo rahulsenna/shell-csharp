@@ -26,18 +26,25 @@ class Program
       {
         StringBuilder sb = new();
         bool inSingleQuote = false;
+        bool inDoubleQuote = false;
         for (int i = 5; i < line.Length; ++i)
         {
-          if (line[i] == '\'')
+          while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
+          {
+            if (inSingleQuote || inDoubleQuote)
+              sb.Append(line[i]);
+            i++;
+          }
+
+          if (!inDoubleQuote && line[i] == '\'')
           {
             inSingleQuote = !inSingleQuote;
             continue;
           }
-          while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
+          if (line[i] == '"')
           {
-            if (inSingleQuote)
-              sb.Append(line[i]);
-            i++;
+            inDoubleQuote = !inDoubleQuote;
+            continue;
           }
           sb.Append(line[i]);
         }
@@ -76,8 +83,10 @@ class Program
           Console.WriteLine($"{line}: command not found");
         else
         {
-          // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
-          using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
+          if (line.IndexOf('"') == -1)
+            line = line.Replace('\'', '"');
+          using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
+          // using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
           process?.WaitForExit();
         }
       }
