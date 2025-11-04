@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics;
+using System.Text;
 
 class Program
 {
@@ -22,7 +23,27 @@ class Program
       string firstToken = firstTokenIdx < 0 ? line : line[0..firstTokenIdx];
 
       if (firstToken == "echo")
-        Console.WriteLine(line.AsMemory(5));
+      {
+        StringBuilder sb = new();
+        bool inSingleQuote = false;
+        for (int i = 5; i < line.Length; ++i)
+        {
+          if (line[i] == '\'')
+          {
+            inSingleQuote = !inSingleQuote;
+            continue;
+          }
+          while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
+          {
+            if (inSingleQuote)
+              sb.Append(line[i]);
+            i++;
+          }
+          sb.Append(line[i]);
+        }
+
+        Console.WriteLine(sb.ToString());
+      }
 
       else if (firstToken == "pwd")
       {
@@ -55,7 +76,8 @@ class Program
           Console.WriteLine($"{line}: command not found");
         else
         {
-          using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
+          // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
+          using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
           process?.WaitForExit();
         }
       }
