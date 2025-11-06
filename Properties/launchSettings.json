@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "MyLaunchProfileName": {
+      "commandName": "Project",
+      "commandLineArgs": "custom_exe_8762 Emily"
+    }
+  }
+}

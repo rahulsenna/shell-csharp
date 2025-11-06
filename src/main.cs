@@ -24,41 +24,8 @@ class Program
 
       if (firstToken == "echo")
       {
-        StringBuilder sb = new();
-        bool inSingleQuote = false;
-        bool inDoubleQuote = false;
-        for (int i = 5; i < line.Length; ++i)
-        {
-          if (line[i] == '\\')
-          {
-            if (inSingleQuote)
-              sb.Append('\\');
-
-            sb.Append(line[++i]);
-            continue;
-          }
-
-          while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
-          {
-            if (inSingleQuote || inDoubleQuote)
-              sb.Append(line[i]);
-            i++;
-          }
-
-          if (!inDoubleQuote && line[i] == '\'')
-          {
-            inSingleQuote = !inSingleQuote;
-            continue;
-          }
-          if (line[i] == '"')
-          {
-            inDoubleQuote = !inDoubleQuote;
-            continue;
-          }
-          sb.Append(line[i]);
-        }
-
-        Console.WriteLine(sb.ToString());
+        List<string> args = ParseArgs(line[5..]);
+        Console.WriteLine(string.Join("", args));
       }
 
       else if (firstToken == "pwd")
@@ -92,15 +59,94 @@ class Program
           Console.WriteLine($"{line}: command not found");
         else
         {
-          if (line.IndexOf('"') == -1)
-            line = line.Replace('\'', '"');
-          using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
-          // using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
+          line = line.Replace("\"", "\\\"");
+          // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
+          using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
           process?.WaitForExit();
         }
       }
 
     }
+  }
+
+  static List<string> ParseArgs(string line)
+  {
+    List<string> args = [];
+    StringBuilder sb = new();
+    bool inSingleQuote = false;
+    bool inDoubleQuote = false;
+    for (int i = 0; i < line.Length; ++i)
+    {
+      if (line[i] == '\\')
+      {
+        if (inSingleQuote)
+          sb.Append('\\');
+
+        sb.Append(line[++i]);
+        continue;
+      }
+
+      while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
+      {
+        if (inSingleQuote || inDoubleQuote)
+          sb.Append(line[i]);
+        i++;
+      }
+
+      if (!inDoubleQuote && line[i] == '\'')
+      {
+        if (i + 1 < line.Length && line[i + 1] == '\'')
+        {
+          i++;
+          continue;
+        }
+        if (inSingleQuote)
+        {
+          args.Add(sb.ToString());
+          sb.Clear();
+          inSingleQuote = false;
+        }
+        else
+        {
+          inSingleQuote = true;
+        }
+
+        continue;
+      }
+      if (line[i] == '"')
+      {
+        if (i + 1 < line.Length && line[i + 1] == '"')
+        {
+          i++;
+          continue;
+        }
+        if (inDoubleQuote)
+        {
+          args.Add(sb.ToString());
+          sb.Clear();
+          inDoubleQuote = false;
+        }
+        else
+        {
+          inDoubleQuote = true;
+        }
+        continue;
+      }
+      if (line[i] == ' ' && !inSingleQuote && !inDoubleQuote)
+      {
+        sb.Append(' ');
+        if (sb.Length > 0)
+        {
+          args.Add(sb.ToString());
+          sb.Clear();
+        }
+
+        continue;
+      }
+      sb.Append(line[i]);
+    }
+    args.Add(sb.ToString());
+    return args;
   }
 
   static void Type(string line)
