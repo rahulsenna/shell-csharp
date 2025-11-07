@@ -19,13 +19,12 @@ class Program
       if (line == "exit 0")
         Environment.Exit(0);
 
-      int firstTokenIdx = line.IndexOf(' ');
-      string firstToken = firstTokenIdx < 0 ? line : line[0..firstTokenIdx];
+      List<string> args = ParseArgs(line);
+      string firstToken = args.First().Trim();
 
       if (firstToken == "echo")
       {
-        List<string> args = ParseArgs(line[5..]);
-        Console.WriteLine(string.Join("", args));
+        Console.WriteLine(string.Join("", args.Skip(1)));
       }
 
       else if (firstToken == "pwd")
@@ -59,9 +58,16 @@ class Program
           Console.WriteLine($"{line}: command not found");
         else
         {
-          line = line.Replace("\"", "\\\"");
+          var startInfo = new ProcessStartInfo { FileName = args.First().Trim(), UseShellExecute = false };
+          foreach (var e in args.Skip(1))
+          {
+            if (!string.IsNullOrEmpty(e) && e != " ")
+              startInfo.ArgumentList.Add(e);
+          }
+
+          using var process = Process.Start(startInfo);
           // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
-          using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
+          // using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
           process?.WaitForExit();
         }
       }
@@ -79,7 +85,9 @@ class Program
     {
       if (line[i] == '\\')
       {
-        if (inSingleQuote)
+        if (inSingleQuote && line[i + 1] != '\\')
+          sb.Append('\\');
+        else if (inDoubleQuote && line[i + 1] != '\\' && line[i + 1] != '"')
           sb.Append('\\');
 
         sb.Append(line[++i]);
@@ -106,11 +114,10 @@ class Program
           sb.Clear();
           inSingleQuote = false;
         }
+        else if (inDoubleQuote)
+          sb.Append('\'');
         else
-        {
           inSingleQuote = true;
-        }
-
         continue;
       }
       if (line[i] == '"')
@@ -126,10 +133,10 @@ class Program
           sb.Clear();
           inDoubleQuote = false;
         }
+        else if (inSingleQuote)
+          sb.Append('\"');
         else
-        {
           inDoubleQuote = true;
-        }
         continue;
       }
       if (line[i] == ' ' && !inSingleQuote && !inDoubleQuote)
@@ -145,7 +152,8 @@ class Program
       }
       sb.Append(line[i]);
     }
-    args.Add(sb.ToString());
+    if (sb.Length > 0)
+      args.Add(sb.ToString());
     return args;
   }
 
