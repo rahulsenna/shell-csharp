@@ -20,11 +20,11 @@ class Program
         Environment.Exit(0);
 
       List<string> args = ParseArgs(line);
-      string firstToken = args.First().Trim();
+      string firstToken = args.First();
 
       if (firstToken == "echo")
       {
-        Console.WriteLine(string.Join("", args.Skip(1)));
+        Console.WriteLine(string.Join(" ", args.Skip(1)));
       }
 
       else if (firstToken == "pwd")
@@ -58,7 +58,7 @@ class Program
           Console.WriteLine($"{line}: command not found");
         else
         {
-          var startInfo = new ProcessStartInfo { FileName = args.First().Trim(), UseShellExecute = false };
+          var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false };
           foreach (var e in args.Skip(1))
           {
             if (!string.IsNullOrEmpty(e) && e != " ")
@@ -83,75 +83,55 @@ class Program
     bool inDoubleQuote = false;
     for (int i = 0; i < line.Length; ++i)
     {
-      if (line[i] == '\\')
+      char c = line[i];
+      if (c == '\\' && !inSingleQuote)
       {
-        if (inSingleQuote && line[i + 1] != '\\')
-          sb.Append('\\');
-        else if (inDoubleQuote && line[i + 1] != '\\' && line[i + 1] != '"')
-          sb.Append('\\');
-
-        sb.Append(line[++i]);
+        if (i + 1 < line.Length)
+        {
+          char next = line[i + 1];
+          if (inDoubleQuote)
+          {
+            if (next == '"' || next == '\\' || next == '$' || next == '`')
+            {
+              sb.Append(next);
+              i++;
+              continue;
+            }
+            sb.Append(c);
+          }
+          else
+          {
+            sb.Append(next);
+            i++;
+          }
+        }
         continue;
       }
 
-      while (i + 2 < line.Length && line[i] == ' ' && line[i + 1] == ' ')
+      if (c == '\'' && !inDoubleQuote)
       {
-        if (inSingleQuote || inDoubleQuote)
-          sb.Append(line[i]);
-        i++;
+        inSingleQuote = !inSingleQuote;
+        continue;
       }
 
-      if (!inDoubleQuote && line[i] == '\'')
+      if (c == '"' && !inSingleQuote)
       {
-        if (i + 1 < line.Length && line[i + 1] == '\'')
-        {
-          i++;
-          continue;
-        }
-        if (inSingleQuote)
-        {
-          args.Add(sb.ToString());
-          sb.Clear();
-          inSingleQuote = false;
-        }
-        else if (inDoubleQuote)
-          sb.Append('\'');
-        else
-          inSingleQuote = true;
+        inDoubleQuote = !inDoubleQuote;
         continue;
       }
-      if (line[i] == '"')
+
+      if (char.IsWhiteSpace(c) && !inSingleQuote && !inDoubleQuote)
       {
-        if (i + 1 < line.Length && line[i + 1] == '"')
-        {
-          i++;
-          continue;
-        }
-        if (inDoubleQuote)
-        {
-          args.Add(sb.ToString());
-          sb.Clear();
-          inDoubleQuote = false;
-        }
-        else if (inSingleQuote)
-          sb.Append('\"');
-        else
-          inDoubleQuote = true;
-        continue;
-      }
-      if (line[i] == ' ' && !inSingleQuote && !inDoubleQuote)
-      {
-        sb.Append(' ');
         if (sb.Length > 0)
         {
           args.Add(sb.ToString());
           sb.Clear();
         }
-
         continue;
       }
-      sb.Append(line[i]);
+      sb.Append(c);
     }
+
     if (sb.Length > 0)
       args.Add(sb.ToString());
     return args;
