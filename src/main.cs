@@ -22,57 +22,112 @@ class Program
       List<string> args = ParseArgs(line);
       string firstToken = args.First();
 
-      if (firstToken == "echo")
+      if (builtins.Contains(firstToken))
       {
-        Console.WriteLine(string.Join(" ", args.Skip(1)));
-      }
 
-      else if (firstToken == "pwd")
-      {
-        string dir = Environment.CurrentDirectory;
-        if (dir.StartsWith("/private")) // for mac
-          dir = dir[8..];
-        Console.WriteLine(dir);
-      }
-      else if (firstToken == "cd")
-      {
-        string dir = line[3..];
-        if (dir == "~")
-          dir = Environment.GetEnvironmentVariable("HOME")!;
-
-        if (!Path.Exists(dir))
+        if (GetRedirectPath(args) is var (redirectPath, rIdx, rType) && redirectPath != null)
         {
-          Console.Error.WriteLine($"cd: {dir}: No such file or directory");
-          continue;
+          string output = RunBuiltins(firstToken, string.Join(" ", args[1..rIdx])) + '\n';
+            File.WriteAllText(redirectPath, output);
         }
-        Directory.SetCurrentDirectory(dir);
-      }
-      else if (firstToken == "type")
-      {
-        Type(line);
-      }
-      else
-      {
-        var exe = FindExecutable(firstToken);
-        if (exe == null)
-          Console.WriteLine($"{line}: command not found");
         else
         {
-          var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false };
-          foreach (var e in args.Skip(1))
-          {
-            if (!string.IsNullOrEmpty(e) && e != " ")
-              startInfo.ArgumentList.Add(e);
-          }
-
-          using var process = Process.Start(startInfo);
-          // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
-          // using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
-          process?.WaitForExit();
-        }
+          string output = RunBuiltins(firstToken, string.Join(" ", args.Skip(1)));
+          if (!string.IsNullOrEmpty(output))
+            Console.WriteLine(output);
+        }          
+        continue;
       }
 
+      var exe = FindExecutable(firstToken);
+      if (exe == null)
+        Console.WriteLine($"{line}: command not found");
+      else
+      {
+        var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false };
+
+        string? redirectPath = null;
+        foreach (var e in args.Skip(1))
+        {
+          if (e == ">" || e == "1>")
+          {
+            startInfo.RedirectStandardOutput = true;
+            continue;
+          }
+          
+          if (startInfo.RedirectStandardOutput || startInfo.RedirectStandardError)
+          {
+            redirectPath = e;
+            continue;
+          }
+
+          if (!string.IsNullOrEmpty(e) && e != " ")
+            startInfo.ArgumentList.Add(e);
+        }
+
+        using var process = Process.Start(startInfo);
+        if (redirectPath != null)
+        {
+          var output = process?.StandardOutput.ReadToEnd();
+          File.WriteAllText(redirectPath, output);
+        }
+        // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
+        // using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
+        process?.WaitForExit();
+      }
+
+
     }
+  }
+
+  static (string?, int, string?) GetRedirectPath(List<string> args)
+  {
+    string[] redirectTypes = [">", "1>", "2>", ">>"];
+
+    foreach (var rType in redirectTypes)
+    {
+      int redirectIdx = args.IndexOf(rType);
+      if (redirectIdx > 0)
+      {
+        return (args[redirectIdx + 1], redirectIdx, rType);
+      }
+    }
+
+    return (null, -1, null);
+  }
+
+  static string RunBuiltins(string command, string input)
+  {
+    if (command == "echo")
+    {
+      return input;
+    }
+
+    else if (command == "pwd")
+    {
+      string dir = Environment.CurrentDirectory;
+      if (dir.StartsWith("/private")) // for mac
+        dir = dir[8..];
+      return dir;
+    }
+    else if (command == "cd")
+    {
+      string dir = input;
+      if (dir == "~")
+        dir = Environment.GetEnvironmentVariable("HOME")!;
+
+      if (!Path.Exists(dir))
+      {
+        return $"cd: {dir}: No such file or directory";
+      }
+      Directory.SetCurrentDirectory(dir);
+      return "";
+    }
+    else if (command == "type")
+    {
+      return Type(input);
+    }
+    return "";
   }
 
   static List<string> ParseArgs(string line)
@@ -137,18 +192,17 @@ class Program
     return args;
   }
 
-  static void Type(string line)
+  static string Type(string line)
   {
-    string secondToken = line[5..];
-    if (builtins.Contains(secondToken))
-      Console.WriteLine($"{secondToken} is a shell builtin");
+    if (builtins.Contains(line))
+      return $"{line} is a shell builtin";
     else
     {
-      var path = FindExecutable(secondToken);
+      var path = FindExecutable(line);
       if (path == null)
-        Console.WriteLine($"{secondToken}: not found");
+        return $"{line}: not found";
       else
-        Console.WriteLine($"{secondToken} is {path}");
+        return $"{line} is {path}";
     }
   }
 
