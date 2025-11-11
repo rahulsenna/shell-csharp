@@ -20,22 +20,13 @@ class Program
         Environment.Exit(0);
 
       List<string> args = ParseArgs(line);
+      var state = ProcessRedirect(args);
       string firstToken = args.First();
 
       if (builtins.Contains(firstToken))
       {
-
-        if (GetRedirectPath(args) is var (redirectPath, rIdx, rType) && redirectPath != null)
-        {
-          string output = RunBuiltins(firstToken, string.Join(" ", args[1..rIdx])) + '\n';
-            File.WriteAllText(redirectPath, output);
-        }
-        else
-        {
-          string output = RunBuiltins(firstToken, string.Join(" ", args.Skip(1)));
-          if (!string.IsNullOrEmpty(output))
-            Console.WriteLine(output);
-        }          
+        var (output, errOut) = RunBuiltins(state.Args);
+        WriteOutput(output, errOut, state);
         continue;
       }
 
@@ -44,63 +35,74 @@ class Program
         Console.WriteLine($"{line}: command not found");
       else
       {
-        var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false };
-
-        string? redirectPath = null;
-        foreach (var e in args.Skip(1))
+        var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
+        foreach (var e in state.Args.Skip(1))
         {
-          if (e == ">" || e == "1>")
-          {
-            startInfo.RedirectStandardOutput = true;
-            continue;
-          }
-          
-          if (startInfo.RedirectStandardOutput || startInfo.RedirectStandardError)
-          {
-            redirectPath = e;
-            continue;
-          }
-
           if (!string.IsNullOrEmpty(e) && e != " ")
             startInfo.ArgumentList.Add(e);
         }
-
         using var process = Process.Start(startInfo);
-        if (redirectPath != null)
-        {
-          var output = process?.StandardOutput.ReadToEnd();
-          File.WriteAllText(redirectPath, output);
-        }
-        // using var process = Process.Start(new ProcessStartInfo { FileName = firstToken, Arguments = line[firstToken.Length..] });
-        // using var process = Process.Start(new ProcessStartInfo { FileName = "/bin/sh", Arguments = $"-c \"{line}\"", UseShellExecute = false });
+        string? output = startInfo.RedirectStandardOutput ? process?.StandardOutput.ReadToEnd() : null;
+        string? errOutput = startInfo.RedirectStandardError ? process?.StandardError.ReadToEnd() : null;
         process?.WaitForExit();
+        WriteOutput(output, errOutput, state);
       }
-
-
     }
   }
 
-  static (string?, int, string?) GetRedirectPath(List<string> args)
+  static void WriteOutput(string? output, string? errOutput, State state)
   {
-    string[] redirectTypes = [">", "1>", "2>", ">>"];
-
-    foreach (var rType in redirectTypes)
+    if (state.OutPath != null)
     {
-      int redirectIdx = args.IndexOf(rType);
-      if (redirectIdx > 0)
-      {
-        return (args[redirectIdx + 1], redirectIdx, rType);
-      }
+      string content = output ?? "";
+      if (state.AppendOut)
+        File.AppendAllText(state.OutPath, content);
+      else
+        File.WriteAllText(state.OutPath, content);
     }
+    else
+      Console.Write(output);
 
-    return (null, -1, null);
+
+    if (state.ErrPath != null)
+    {
+      string content = errOutput ?? "";
+      if (state.AppendErr)
+        File.AppendAllText(state.ErrPath, content);
+      else
+        File.WriteAllText(state.ErrPath, content);
+    }
+    else
+      Console.Error.Write(errOutput);
   }
 
-  static string RunBuiltins(string command, string input)
+  static State ProcessRedirect(List<string> args)
   {
+    HashSet<string> redirectTypes = [">", "1>", ">>", "1>>", "2>", "2>>", "&>"];
+    int redirectIdx = args.FindIndex(redirectTypes.Contains);
+    if (redirectIdx < 0)
+      return new(args);
+
+    string op = args[redirectIdx];
+    string path = args[redirectIdx + 1];
+
+    return new(
+          Args: args.GetRange(0, redirectIdx),
+          OutPath: op.StartsWith("2") ? null : path,
+          ErrPath: op.StartsWith("2") || op == "&>" ? path : null,
+          AppendOut: op == "1>>" || op == ">>" || op == "&>",
+          AppendErr: op == "2>>" || op == "&>"
+    );
+  }
+
+  static (string?, string?) RunBuiltins(IReadOnlyList<string> args)
+  {
+    string command = args.First();
+    string input = string.Join(" ", args.Skip(1));
+
     if (command == "echo")
     {
-      return input;
+      return (input + '\n', null);
     }
 
     else if (command == "pwd")
@@ -108,7 +110,7 @@ class Program
       string dir = Environment.CurrentDirectory;
       if (dir.StartsWith("/private")) // for mac
         dir = dir[8..];
-      return dir;
+      return (dir + '\n', null);
     }
     else if (command == "cd")
     {
@@ -118,16 +120,15 @@ class Program
 
       if (!Path.Exists(dir))
       {
-        return $"cd: {dir}: No such file or directory";
+        return (null, $"cd: {dir}: No such file or directory\n");
       }
       Directory.SetCurrentDirectory(dir);
-      return "";
     }
     else if (command == "type")
     {
-      return Type(input);
+      return (Type(input) + '\n', null);
     }
-    return "";
+    return (null, null);
   }
 
   static List<string> ParseArgs(string line)
@@ -232,3 +233,10 @@ class Program
 
 }
 
+public record State(
+  IReadOnlyList<string> Args,
+  string? OutPath = null,
+  string? ErrPath = null,
+  bool AppendOut = false,
+  bool AppendErr = false
+);
