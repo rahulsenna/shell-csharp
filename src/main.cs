@@ -16,45 +16,8 @@ class Program
     while (true)
     {
       Console.Write("$ ");
-      string? line = null;
-      StringBuilder inputBuilder = new();
+      string? line = ReadInputWithCompletion();
 
-      while (true)
-      {
-        var keyInfo = Console.ReadKey(intercept: true);
-
-        if (keyInfo.Key == ConsoleKey.Enter)
-        {
-          Console.WriteLine();
-          break;
-        }
-        else if (keyInfo.Key == ConsoleKey.Tab)
-        {
-          string prefix = inputBuilder.ToString();
-          bool foundCompletion = false;
-          foreach (var cmd in executables)
-          {
-            if (cmd.StartsWith(prefix))
-            {
-              string completion = string.Concat(cmd.AsSpan(prefix.Length), " ");
-              inputBuilder.Append(completion);
-              Console.Write(completion);
-              foundCompletion = true;
-              break;
-            }
-          }
-          if (!foundCompletion)
-            Console.Write("\a");
-        }
-        else
-        {
-          inputBuilder.Append(keyInfo.KeyChar);
-          Console.Write(keyInfo.KeyChar);
-        }
-      }
-
-      if (inputBuilder.Length > 0)
-        line = inputBuilder.ToString();
       if (line == null)
         continue;
 
@@ -63,64 +26,83 @@ class Program
 
       List<string> args = ParseArgs(line);
       var state = ProcessRedirect(args);
-      string firstToken = args.First();
 
-      if (builtins.Contains(firstToken))
+      if (builtins.Contains(args.First()))
       {
-        var (output, errOut) = RunBuiltins(state.Args);
-        WriteOutput(output, errOut, state);
-        continue;
+        var (output, err) = RunBuiltins(state.Args);
+        WriteOutput(output, err, state);
       }
-
-      if (!executablePaths.ContainsKey(firstToken))
-        Console.WriteLine($"{line}: command not found");
+      else if (executablePaths.ContainsKey(args.First()))
+      {
+        var (output, err) = RunExternal(state.Args);
+        WriteOutput(output, err, state);
+      }
       else
-      {
-        var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
-        foreach (var e in state.Args.Skip(1))
-        {
-          if (!string.IsNullOrEmpty(e) && e != " ")
-            startInfo.ArgumentList.Add(e);
-        }
-        using var process = Process.Start(startInfo);
-        string? output = startInfo.RedirectStandardOutput ? process?.StandardOutput.ReadToEnd() : null;
-        string? errOutput = startInfo.RedirectStandardError ? process?.StandardError.ReadToEnd() : null;
-        process?.WaitForExit();
-        WriteOutput(output, errOutput, state);
-      }
+        Console.WriteLine($"{args.First()}: command not found");
     }
   }
 
-  static void WriteOutput(string? output, string? errOutput, State state)
+  static string? ReadInputWithCompletion()
+  {
+    StringBuilder sb = new();
+    while (true)
+    {
+      var keyInfo = Console.ReadKey(intercept: true);
+      if (keyInfo.Key == ConsoleKey.Enter)
+      {
+        Console.WriteLine();
+        break;
+      }
+      else if (keyInfo.Key == ConsoleKey.Tab)
+      {
+        string prefix = sb.ToString();
+        bool foundCompletion = false;
+        foreach (var cmd in executables)
+        {
+          if (cmd.StartsWith(prefix))
+          {
+            string completion = string.Concat(cmd.AsSpan(prefix.Length), " ");
+            sb.Append(completion);
+            Console.Write(completion);
+            foundCompletion = true;
+            break;
+          }
+        }
+        if (!foundCompletion)
+          Console.Write("\a");
+      }
+      else
+      {
+        sb.Append(keyInfo.KeyChar);
+        Console.Write(keyInfo.KeyChar);
+      }
+    }
+
+    return sb.Length > 0 ? sb.ToString() : null;
+  }
+
+  static void WriteOutput(string? output, string? err, State state)
   {
     if (state.OutPath != null)
-    {
-      string content = output ?? "";
-      if (state.AppendOut)
-        File.AppendAllText(state.OutPath, content);
-      else
-        File.WriteAllText(state.OutPath, content);
-    }
+      WriteToFile(output ?? "", state.OutPath, state.AppendOut);
     else
       Console.Write(output);
 
-
     if (state.ErrPath != null)
-    {
-      string content = errOutput ?? "";
-      if (state.AppendErr)
-        File.AppendAllText(state.ErrPath, content);
-      else
-        File.WriteAllText(state.ErrPath, content);
-    }
+      WriteToFile(err ?? "", state.ErrPath, state.AppendErr);
     else
-      Console.Error.Write(errOutput);
+      Console.Error.Write(err);
+  }
+
+  static void WriteToFile(string content, string path, bool append)
+  {
+    if (append) File.AppendAllText(path, content);
+    else File.WriteAllText(path, content);
   }
 
   static State ProcessRedirect(List<string> args)
   {
-    HashSet<string> redirectTypes = [">", "1>", ">>", "1>>", "2>", "2>>", "&>"];
-    int redirectIdx = args.FindIndex(redirectTypes.Contains);
+    int redirectIdx = args.FindIndex(a => a is ">" or "1>" or ">>" or "1>>" or "2>" or "2>>" or "&>");
     if (redirectIdx < 0)
       return new(args);
 
@@ -136,16 +118,26 @@ class Program
     );
   }
 
+  static (string? output, string? err) RunExternal(IReadOnlyList<string> args)
+  {
+    var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
+    foreach (var e in args.Skip(1).Where(a => !string.IsNullOrWhiteSpace(a)))
+      startInfo.ArgumentList.Add(e);
+
+    using var process = Process.Start(startInfo);
+    string? output = process?.StandardOutput.ReadToEnd();
+    string? err = process?.StandardError.ReadToEnd();
+    process?.WaitForExit();
+    return (output, err);
+  }
+
   static (string?, string?) RunBuiltins(IReadOnlyList<string> args)
   {
-    string command = args.First();
+    string command = args[0];
     string input = string.Join(" ", args.Skip(1));
 
     if (command == "echo")
-    {
       return (input + '\n', null);
-    }
-
     else if (command == "pwd")
     {
       string dir = Environment.CurrentDirectory;
@@ -158,17 +150,13 @@ class Program
       string dir = input;
       if (dir == "~")
         dir = Environment.GetEnvironmentVariable("HOME")!;
-
       if (!Path.Exists(dir))
-      {
         return (null, $"cd: {dir}: No such file or directory\n");
-      }
       Directory.SetCurrentDirectory(dir);
     }
     else if (command == "type")
-    {
       return (Type(input) + '\n', null);
-    }
+
     return (null, null);
   }
 
@@ -176,8 +164,7 @@ class Program
   {
     List<string> args = [];
     StringBuilder sb = new();
-    bool inSingleQuote = false;
-    bool inDoubleQuote = false;
+    bool inSingleQuote = false, inDoubleQuote = false;
     for (int i = 0; i < line.Length; ++i)
     {
       char c = line[i];
@@ -185,48 +172,29 @@ class Program
       {
         if (i + 1 < line.Length)
         {
-          char next = line[i + 1];
-          if (inDoubleQuote)
-          {
-            if (next == '"' || next == '\\' || next == '$' || next == '`')
-            {
-              sb.Append(next);
-              i++;
-              continue;
-            }
-            sb.Append(c);
-          }
-          else
+          char next = line[++i];
+          if (!inDoubleQuote || next == '"' || next == '\\' || next == '$' || next == '`')
           {
             sb.Append(next);
-            i++;
+            continue;
           }
+          sb.Append('\\').Append(next);
         }
-        continue;
       }
-
-      if (c == '\'' && !inDoubleQuote)
-      {
+      else if (c == '\'' && !inDoubleQuote)
         inSingleQuote = !inSingleQuote;
-        continue;
-      }
-
-      if (c == '"' && !inSingleQuote)
-      {
+      else if (c == '"' && !inSingleQuote)
         inDoubleQuote = !inDoubleQuote;
-        continue;
-      }
-
-      if (char.IsWhiteSpace(c) && !inSingleQuote && !inDoubleQuote)
+      else if (char.IsWhiteSpace(c) && !inSingleQuote && !inDoubleQuote)
       {
         if (sb.Length > 0)
         {
           args.Add(sb.ToString());
           sb.Clear();
         }
-        continue;
       }
-      sb.Append(c);
+      else
+        sb.Append(c);
     }
 
     if (sb.Length > 0)
@@ -247,23 +215,16 @@ class Program
     foreach (var cmd in builtins)
       executablePaths[cmd] = "a shell builtin";
 
-    string? paths = Environment.GetEnvironmentVariable("PATH");
-    foreach (var dir in paths!.Split(":"))
+    var paths = Environment.GetEnvironmentVariable("PATH")?.Split(':') ?? [];
+    foreach (var dir in paths.Where(Directory.Exists))
     {
-      if (Directory.Exists(dir))
+      foreach (var file in Directory.GetFileSystemEntries(dir))
       {
-        foreach (var file in Directory.GetFileSystemEntries(dir))
-        {
-          if (executablePaths.ContainsKey(Path.GetFileName(file)))
-            continue;
-          var path = Path.Combine(dir, file);
-          FileInfo info = new(path);
-          if (info.ResolveLinkTarget(true) != null)
-            path = info.ResolveLinkTarget(true)?.FullName;
-
-          if (File.Exists(path) && IsExecutable(path))
-            executablePaths[Path.GetFileName(file)] = path;
-        }
+        string name = Path.GetFileName(file);
+        if (executablePaths.ContainsKey(name)) continue;
+        var path = new FileInfo(file).ResolveLinkTarget(true)?.FullName ?? file;
+        if (File.Exists(path) && IsExecutable(path))
+          executablePaths[name] = file;
       }
     }
   }
