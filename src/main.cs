@@ -6,13 +6,55 @@ class Program
 {
 
   static readonly string[] builtins = ["echo", "cd", "exit", "pwd", "history", "type"];
-  List<string> executables = [.. builtins];
+  static List<string> executables = [];
+  static Dictionary<string, string> executablePaths = [];
   static void Main()
   {
+    FindExecutables();
+    executables = [.. executablePaths.Keys];
+    executables.Sort((a, b) => a.Length - b.Length);
     while (true)
     {
       Console.Write("$ ");
-      string? line = Console.ReadLine();
+      string? line = null;
+      StringBuilder inputBuilder = new();
+
+      while (true)
+      {
+        var keyInfo = Console.ReadKey(intercept: true);
+
+        if (keyInfo.Key == ConsoleKey.Enter)
+        {
+          Console.WriteLine();
+          break;
+        }
+        else if (keyInfo.Key == ConsoleKey.Tab)
+        {
+          string prefix = inputBuilder.ToString();
+          bool foundCompletion = false;
+          foreach (var cmd in executables)
+          {
+            if (cmd.StartsWith(prefix))
+            {
+              string completion = string.Concat(cmd.AsSpan(prefix.Length), " ");
+              inputBuilder.Append(completion);
+              Console.Write(completion);
+              foundCompletion = true;
+              break;
+            }
+          }
+          if (!foundCompletion)
+            Console.Write("\a");
+        }
+        else
+        {
+          inputBuilder.Append(keyInfo.KeyChar);
+          Console.Write(keyInfo.KeyChar);
+        }
+      }
+
+      if (inputBuilder.Length > 0)
+        line = inputBuilder.ToString();
       if (line == null)
         continue;
 
@@ -30,8 +72,7 @@ class Program
         continue;
       }
 
-      var exe = FindExecutable(firstToken);
-      if (exe == null)
+      if (!executablePaths.ContainsKey(firstToken))
         Console.WriteLine($"{line}: command not found");
       else
       {
@@ -193,30 +234,38 @@ class Program
     return args;
   }
 
-  static string Type(string line)
+  static string Type(string cmd)
   {
-    if (builtins.Contains(line))
-      return $"{line} is a shell builtin";
+    if (executablePaths.TryGetValue(cmd, out string? value))
+      return $"{cmd} is {value}";
     else
-    {
-      var path = FindExecutable(line);
-      if (path == null)
-        return $"{line}: not found";
-      else
-        return $"{line} is {path}";
-    }
+      return $"{cmd}: not found";
   }
 
-  static string? FindExecutable(string program)
+  static void FindExecutables()
   {
-    string? path = Environment.GetEnvironmentVariable("PATH");
-    foreach (var dir in path!.Split(":"))
+    foreach (var cmd in builtins)
+      executablePaths[cmd] = "a shell builtin";
+
+    string? paths = Environment.GetEnvironmentVariable("PATH");
+    foreach (var dir in paths!.Split(":"))
     {
-      var fullPath = Path.Combine(dir, program);
-      if (File.Exists(fullPath) && IsExecutable(fullPath))
-        return fullPath;
+      if (Directory.Exists(dir))
+      {
+        foreach (var file in Directory.GetFileSystemEntries(dir))
+        {
+          if (executablePaths.ContainsKey(Path.GetFileName(file)))
+            continue;
+          var path = Path.Combine(dir, file);
+          FileInfo info = new(path);
+          if (info.ResolveLinkTarget(true) != null)
+            path = info.ResolveLinkTarget(true)?.FullName;
+
+          if (File.Exists(path) && IsExecutable(path))
+            executablePaths[Path.GetFileName(file)] = path;
+        }
+      }
     }
-    return null;
   }
 
   static bool IsExecutable(string path)
