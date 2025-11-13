@@ -8,6 +8,7 @@ class Program
   static readonly string[] builtins = ["echo", "cd", "exit", "pwd", "history", "type"];
   static List<string> executables = [];
   static List<string> history = [];
+  static int historyIdx = 0;
   static Dictionary<string, string> executablePaths = [];
   static void Main()
   {
@@ -122,6 +123,20 @@ class Program
           Console.Write(completion);
         }
 
+      }
+      else if (keyInfo.Key == ConsoleKey.UpArrow || keyInfo.Key == ConsoleKey.DownArrow)
+      {
+        sb.Clear();
+        Console.Write("\r");
+        Console.Write(new string(' ', Console.WindowWidth - 1));
+        Console.Write("\r");
+
+        historyIdx += (keyInfo.Key == ConsoleKey.DownArrow) ? -1 : 1;
+        var historyLine = history[^historyIdx];
+        int cmdStart = historyLine.IndexOf("  ", 4) + 2;
+        string cmd = historyLine[cmdStart..];
+        sb.Append(cmd);
+        Console.Write($"$ {cmd}");
       }
       else
       {
