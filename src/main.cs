@@ -27,19 +27,47 @@ class Program
       List<string> args = ParseArgs(line);
       var state = ProcessRedirect(args);
 
-      if (builtins.Contains(args.First()))
+      if (!state.Args.Contains("|"))
       {
-        var (output, err) = RunBuiltins(state.Args);
-        WriteOutput(output, err, state);
-      }
-      else if (executablePaths.ContainsKey(args.First()))
-      {
-        var (output, err) = RunExternal(state.Args);
+        var (output, err) = RunExe(state.Args);
         WriteOutput(output, err, state);
       }
       else
-        Console.WriteLine($"{args.First()}: command not found");
+      {
+        int pipeIdx = state.Args.IndexOf("|"), startIdx = 0;
+        string? input = null, output = null, err = null;
+        while (true)
+        {
+          var pipedArgs = state.Args.Skip(startIdx).Take(pipeIdx - startIdx).ToList();
+          if (pipeIdx != -1)
+          {
+            (input, err) = RunExe(pipedArgs, input);
+            startIdx = pipeIdx + 1;
+            pipeIdx = state.Args.IndexOf("|", startIdx);
+          }
+          else
+          {
+            pipedArgs = [.. state.Args.Skip(startIdx)];
+            (output, err) = RunExe(pipedArgs, input);
+            WriteOutput(output, err, state);
+            break;
+          }
+        }
+      }
     }
+  }
+
+  static (string? output, string? err) RunExe(List<string> args, string? input = null)
+  {
+    if (builtins.Contains(args.First()))
+    {
+      return RunBuiltins(args);
+    }
+    else if (executablePaths.ContainsKey(args.First()))
+    {
+      return RunExternal(args, input);
+    }
+    return (null, $"{args.First()}: command not found\n");
   }
 
   static string? ReadInputWithCompletion()
@@ -138,17 +166,34 @@ class Program
           AppendErr: op == "2>>" || op == "&>"
     );
   }
-
-  static (string? output, string? err) RunExternal(IReadOnlyList<string> args)
+  static readonly string[] streamingCommands = ["tail", "watch", "top"];
+  static (string? output, string? err) RunExternal(IReadOnlyList<string> args, string? input)
   {
-    var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true };
+    var startInfo = new ProcessStartInfo { FileName = args.First(), UseShellExecute = false, RedirectStandardError = true, RedirectStandardOutput = true, RedirectStandardInput = input != null };
     foreach (var e in args.Skip(1).Where(a => !string.IsNullOrWhiteSpace(a)))
       startInfo.ArgumentList.Add(e);
 
     using var process = Process.Start(startInfo);
-    string? output = process?.StandardOutput.ReadToEnd();
-    string? err = process?.StandardError.ReadToEnd();
-    process?.WaitForExit();
+    if (process == null)
+      return (null, null);
+
+    if (input != null)
+    {
+      process.StandardInput.Write(input);
+      process.StandardInput.Close();
+    }
+
+    if (streamingCommands.Contains(args[0]) && args.Any(a => a == "-f"))
+    {
+      Console.CancelKeyPress += (s, e) => { e.Cancel = true; process.Kill(); };
+      process.StandardOutput.BaseStream.CopyTo(Console.OpenStandardOutput());
+      process.WaitForExit();
+      return (null, null);
+    }
+
+    string? output = process.StandardOutput.ReadToEnd();
+    string? err = process.StandardError.ReadToEnd();
+    process.WaitForExit();
     return (output, err);
   }
 
@@ -266,7 +311,7 @@ class Program
 }
 
 public record State(
-  IReadOnlyList<string> Args,
+  List<string> Args,
   string? OutPath = null,
   string? ErrPath = null,
   bool AppendOut = false,
