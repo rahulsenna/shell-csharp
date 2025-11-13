@@ -45,8 +45,10 @@ class Program
   static string? ReadInputWithCompletion()
   {
     StringBuilder sb = new();
+    bool showMultiple = false;
     while (true)
     {
+
       var keyInfo = Console.ReadKey(intercept: true);
       if (keyInfo.Key == ConsoleKey.Enter)
       {
@@ -56,20 +58,39 @@ class Program
       else if (keyInfo.Key == ConsoleKey.Tab)
       {
         string prefix = sb.ToString();
-        bool foundCompletion = false;
-        foreach (var cmd in executables)
+        var candidates = executables.Where(cmd => cmd.StartsWith(prefix)).ToArray();
+
+        if (candidates.Length == 0)
         {
-          if (cmd.StartsWith(prefix))
-          {
-            string completion = string.Concat(cmd.AsSpan(prefix.Length), " ");
-            sb.Append(completion);
-            Console.Write(completion);
-            foundCompletion = true;
-            break;
-          }
-        }
-        if (!foundCompletion)
           Console.Write("\a");
+          continue;
+        }
+
+        var multi = candidates.Where(cmd => cmd.Length == candidates.First().Length).ToList();
+        if (multi.Count > 1)
+        {
+          if (showMultiple)
+          {
+            Console.WriteLine();
+            multi.Sort();
+            string comp = string.Join("  ", multi);
+            string completion = comp;
+            Console.WriteLine(completion);
+            Console.Write($"$ {sb}");
+            showMultiple = false;
+          }
+          else
+            Console.Write("\a");
+          showMultiple = true;
+        }
+        else
+        {
+          string trail = candidates.Length > 1 ? "" : " ";
+          string completion = string.Concat(candidates.First().AsSpan(prefix.Length), trail);
+          sb.Append(completion);
+          Console.Write(completion);
+        }
+
       }
       else
       {
@@ -222,6 +243,7 @@ class Program
       {
         string name = Path.GetFileName(file);
         if (executablePaths.ContainsKey(name)) continue;
+
         var path = new FileInfo(file).ResolveLinkTarget(true)?.FullName ?? file;
         if (File.Exists(path) && IsExecutable(path))
           executablePaths[name] = file;
