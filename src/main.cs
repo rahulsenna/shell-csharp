@@ -7,6 +7,7 @@ class Program
 
   static readonly string[] builtins = ["echo", "cd", "exit", "pwd", "history", "type"];
   static List<string> executables = [];
+  static List<string> history = [];
   static Dictionary<string, string> executablePaths = [];
   static void Main()
   {
@@ -23,6 +24,8 @@ class Program
 
       if (line == "exit 0")
         Environment.Exit(0);
+
+      history.Add($"    {history.Count + 1}  {string.Join(" ", line)}");
 
       List<string> args = ParseArgs(line);
       var state = ProcessRedirect(args);
@@ -222,6 +225,11 @@ class Program
     }
     else if (command == "type")
       return (Type(input) + '\n', null);
+    else if (command == "history")
+    {
+      int limit = args.Count == 2 ? int.Parse(args[1]) : history.Count;
+      return (string.Join('\n', history.Skip(history.Count - limit)) + '\n', null);
+    }
 
     return (null, null);
   }
