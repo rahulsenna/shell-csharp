@@ -242,6 +242,28 @@ class Program
       return (Type(input) + '\n', null);
     else if (command == "history")
     {
+      if (args.Count == 3)
+      {
+        if (args[1] == "-r")
+        {
+          foreach (var cmd in File.ReadAllText(args[2]).Split('\n'))
+            history.Add($"    {history.Count + 1}  {string.Join(" ", cmd)}");
+          history.RemoveAt(history.Count - 1);
+        }
+        else if (args[1] == "-w" )
+        {
+          StringBuilder sb = new();
+          foreach (var historyLine in history)
+          {
+            int cmdStart = historyLine.IndexOf("  ", 4) + 2;
+            string cmd = historyLine[cmdStart..];
+            sb.Append(cmd + '\n');
+          }
+          File.AppendAllText(args[2], sb.ToString());
+        }
+        return (null, null);
+      }
+
       int limit = args.Count == 2 ? int.Parse(args[1]) : history.Count;
       return (string.Join('\n', history.Skip(history.Count - limit)) + '\n', null);
     }
