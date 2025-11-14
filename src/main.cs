@@ -13,6 +13,14 @@ class Program
   static Dictionary<string, string> executablePaths = [];
   static void Main()
   {
+    string? historyFilePath = Environment.GetEnvironmentVariable("HISTFILE");
+    if (historyFilePath is string)
+    {
+      foreach (var line in File.ReadAllLines(historyFilePath))
+        history.Add($"    {history.Count + 1}  {line}");
+      historyWriteIdx = history.Count;
+    }
+
     FindExecutables();
     executables = [.. executablePaths.Keys];
     executables.Sort((a, b) => a.Length - b.Length);
@@ -24,10 +32,17 @@ class Program
       if (line == null)
         continue;
 
-      if (line == "exit 0")
-        Environment.Exit(0);
-
       history.Add($"    {history.Count + 1}  {string.Join(" ", line)}");
+
+      if (line == "exit 0")
+      {
+        if (historyFilePath is string)
+        {
+          var commands = history.Skip(historyWriteIdx).Select(line => line[(line.IndexOf("  ", 4) + 2)..]);
+          File.AppendAllLines(historyFilePath, commands);
+        }
+        Environment.Exit(0);
+      }
 
       List<string> args = ParseArgs(line);
       var state = ProcessRedirect(args);
@@ -247,20 +262,13 @@ class Program
       {
         if (args[1] == "-r")
         {
-          foreach (var cmd in File.ReadAllText(args[2]).Split('\n'))
-            history.Add($"    {history.Count + 1}  {string.Join(" ", cmd)}");
-          history.RemoveAt(history.Count - 1);
+          foreach (var line in File.ReadAllLines(args[2]))
+            history.Add($"    {history.Count + 1}  {line}");
         }
         else if (args[1] == "-w" || args[1] == "-a")
         {
-          StringBuilder sb = new();
-          foreach (var historyLine in history.Skip(historyWriteIdx))
-          {
-            int cmdStart = historyLine.IndexOf("  ", 4) + 2;
-            string cmd = historyLine[cmdStart..];
-            sb.Append(cmd + '\n');
-          }
-          File.AppendAllText(args[2], sb.ToString());
+          var commands = history.Skip(historyWriteIdx).Select(line => line[(line.IndexOf("  ", 4) + 2)..]);
+          File.AppendAllLines(args[2], commands);
           historyWriteIdx = history.Count;
         }
         return (null, null);
