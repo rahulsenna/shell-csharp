@@ -9,6 +9,7 @@ class Program
   static List<string> executables = [];
   static List<string> history = [];
   static int historyIdx = 0;
+  static int historyWriteIdx = 0;
   static Dictionary<string, string> executablePaths = [];
   static void Main()
   {
@@ -250,16 +251,17 @@ class Program
             history.Add($"    {history.Count + 1}  {string.Join(" ", cmd)}");
           history.RemoveAt(history.Count - 1);
         }
-        else if (args[1] == "-w" )
+        else if (args[1] == "-w" || args[1] == "-a")
         {
           StringBuilder sb = new();
-          foreach (var historyLine in history)
+          foreach (var historyLine in history.Skip(historyWriteIdx))
           {
             int cmdStart = historyLine.IndexOf("  ", 4) + 2;
             string cmd = historyLine[cmdStart..];
             sb.Append(cmd + '\n');
           }
           File.AppendAllText(args[2], sb.ToString());
+          historyWriteIdx = history.Count;
         }
         return (null, null);
       }
