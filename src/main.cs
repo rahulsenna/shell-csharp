@@ -34,7 +34,7 @@ class Program
 
       history.Add($"    {history.Count + 1}  {string.Join(" ", line)}");
 
-      if (line == "exit 0")
+      if (line.StartsWith("exit"))
       {
         if (historyFilePath is string)
         {
