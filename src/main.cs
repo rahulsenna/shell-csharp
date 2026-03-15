@@ -109,34 +109,23 @@ class Program
         var line = sb.ToString();
         string prefix = line[(line.LastIndexOf(' ') + 1)..];
 
-        var candidates = executables.Where(cmd => cmd.StartsWith(prefix)).ToArray();
+        var candidates = prefix.Length > 0 ? executables.Where(cmd => cmd.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToArray() : [];
         fileCompletion = false;
         if (candidates.Length == 0 || prefix.Length == 0)
         {
-          string searchPattern = prefix + "*";
-          prefix = Path.Combine(Environment.CurrentDirectory, prefix);
-          if (searchPattern == "*")
-            prefix += Path.DirectorySeparatorChar;
-          candidates = Directory
-          .EnumerateFileSystemEntries(Environment.CurrentDirectory, searchPattern, SearchOption.TopDirectoryOnly)
+          var cwd = Environment.CurrentDirectory;
+          candidates = Directory.EnumerateFileSystemEntries(cwd, prefix + "*", SearchOption.TopDirectoryOnly)
+          .Select(p => Path.GetRelativePath(cwd, p))
           .Select(p => Directory.Exists(p) ? p + Path.DirectorySeparatorChar : p)
           .OrderBy(x=> x.Length).ToArray();
+
           if (candidates.Length > 1)
           {
-            fileCompletion = true;
+            var first = candidates[0].TrimEnd(Path.DirectorySeparatorChar);
+            if (candidates.Skip(1).Any(x=> x.StartsWith(first)))
+              candidates = [first];
 
-            var loda = candidates.First();
-            if (loda.Last() == Path.DirectorySeparatorChar)
-              loda = loda[..^1];
-
-            if (candidates.Skip(1).Any(x=> x.StartsWith(loda)))
-            {
-              candidates = [loda];
-            }
-              
-
-            // Console.Write("\a");
-            // continue;
+            fileCompletion = candidates.Length > 1;
           }
         }
 
@@ -146,20 +135,15 @@ class Program
           continue;
         }
 
-        var multi = candidates.Where(cmd => cmd.Length == candidates.First().Length).ToList();
-        if (fileCompletion)
-          multi = candidates.Select(x=> x[(Environment.CurrentDirectory.Length+1)..]).ToList();
+        var multi = (fileCompletion ? candidates : candidates.Where(cmd => cmd.Length == candidates.First().Length)).ToList();
         if (multi.Count > 1)
         {
           if (showMultiple)
           {
             Console.WriteLine();
             multi.Sort();
-            string comp = string.Join("  ", multi);
-            string completion = comp;
-            Console.WriteLine(completion);
+            Console.WriteLine(string.Join("  ", multi));
             Console.Write($"$ {sb}");
-            showMultiple = false;
           }
           else
             Console.Write("\a");
@@ -167,8 +151,8 @@ class Program
         }
         else
         {
-          string trail = candidates.Length > 1 ? "" : " ";
-          trail = Directory.Exists(Path.Combine(Environment.CurrentDirectory, candidates.First())) ? "" : trail;
+          bool isDirectory = candidates[0].EndsWith(Path.DirectorySeparatorChar) || Directory.Exists(Path.Combine(Environment.CurrentDirectory, candidates[0]));
+          string trail = candidates.Length > 1 || isDirectory ? "" : " ";
 
           string completion = string.Concat(candidates.First().AsSpan(prefix.Length), trail);
           sb.Append(completion);
