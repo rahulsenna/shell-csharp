@@ -94,6 +94,7 @@ class Program
   {
     StringBuilder sb = new();
     bool showMultiple = false;
+    bool fileCompletion = false;
     while (true)
     {
 
@@ -109,13 +110,34 @@ class Program
         string prefix = line[(line.LastIndexOf(' ') + 1)..];
 
         var candidates = executables.Where(cmd => cmd.StartsWith(prefix)).ToArray();
-        if (candidates.Length == 0)
+        fileCompletion = false;
+        if (candidates.Length == 0 || prefix.Length == 0)
         {
           string searchPattern = prefix + "*";
           prefix = Path.Combine(Environment.CurrentDirectory, prefix);
+          if (searchPattern == "*")
+            prefix += Path.DirectorySeparatorChar;
           candidates = Directory
-          .EnumerateFileSystemEntries(Environment.CurrentDirectory, searchPattern, SearchOption.AllDirectories)
-          .ToArray();
+          .EnumerateFileSystemEntries(Environment.CurrentDirectory, searchPattern, SearchOption.TopDirectoryOnly)
+          .Select(p => Directory.Exists(p) ? p + Path.DirectorySeparatorChar : p)
+          .OrderBy(x=> x.Length).ToArray();
+          if (candidates.Length > 1)
+          {
+            fileCompletion = true;
+
+            var loda = candidates.First();
+            if (loda.Last() == Path.DirectorySeparatorChar)
+              loda = loda[..^1];
+
+            if (candidates.Skip(1).Any(x=> x.StartsWith(loda)))
+            {
+              candidates = [loda];
+            }
+              
+
+            // Console.Write("\a");
+            // continue;
+          }
         }
 
         if (candidates.Length == 0)
@@ -125,6 +147,8 @@ class Program
         }
 
         var multi = candidates.Where(cmd => cmd.Length == candidates.First().Length).ToList();
+        if (fileCompletion)
+          multi = candidates.Select(x=> x[(Environment.CurrentDirectory.Length+1)..]).ToList();
         if (multi.Count > 1)
         {
           if (showMultiple)
@@ -144,6 +168,8 @@ class Program
         else
         {
           string trail = candidates.Length > 1 ? "" : " ";
+          trail = Directory.Exists(Path.Combine(Environment.CurrentDirectory, candidates.First())) ? "" : trail;
+
           string completion = string.Concat(candidates.First().AsSpan(prefix.Length), trail);
           sb.Append(completion);
           Console.Write(completion);
