@@ -105,8 +105,18 @@ class Program
       }
       else if (keyInfo.Key == ConsoleKey.Tab)
       {
-        string prefix = sb.ToString();
+        var line = sb.ToString();
+        string prefix = line[(line.LastIndexOf(' ') + 1)..];
+
         var candidates = executables.Where(cmd => cmd.StartsWith(prefix)).ToArray();
+        if (candidates.Length == 0)
+        {
+          string searchPattern = prefix + "*";
+          prefix = Path.Combine(Environment.CurrentDirectory, prefix);
+          candidates = Directory
+          .EnumerateFileSystemEntries(Environment.CurrentDirectory, searchPattern, SearchOption.AllDirectories)
+          .ToArray();
+        }
 
         if (candidates.Length == 0)
         {
